@@ -47,6 +47,7 @@ class HtdDevice(MediaPlayerEntity):
     sources: [str] = None
     zone: int = None
     changing_volume: int | None = None
+    _ramping: bool = False
     zone_info: ZoneDetail = None
 
     def __init__(self, device_instance_id, zone, client, config):
@@ -97,46 +98,41 @@ class HtdDevice(MediaPlayerEntity):
         self.client.power_off(self.zone)
 
     @property
-    def volume_level(self) -> float:
-        # volume from this client comes in as 1 - 100,
-        # home assistant wants a decimal between 0 and 1.
+    def volume_level(self) -> float | None:
+        if self.zone_info is None:
+            return None
+        if self.changing_volume is not None:
+            return self.changing_volume / 100
         return self.zone_info.volume / 100
 
-    def set_volume_level(self, new_volume: float):
-        if self.changing_volume is not None:
-            _LOGGER.info(
-                "changing new desired volume for zone %d to %d"
-                % (self.zone, new_volume)
-            )
-            self.changing_volume = int(new_volume * 100)
+    async def async_set_volume_level(self, volume: float):
+        target = int(volume * 100)
+        self.changing_volume = target
+        self.async_write_ha_state()
+
+        if self._ramping:
             return
 
+        self._ramping = True
+        await self.hass.async_add_executor_job(self._ramp_volume)
+        self._ramping = False
+        self.async_write_ha_state()
+
+    def _ramp_volume(self):
         def on_increment(desired: int, zone_info: ZoneDetail) -> int | None:
-            if self.update_volume_on_change:
-                self.zone_info = zone_info
-                self.schedule_update_ha_state()
-
-            _LOGGER.info(
-                "updated zone = %d, desired = %f, current = %f"
-                % (self.zone, desired, self.zone_info.volume)
-            )
-
-            if desired != self.changing_volume:
-                _LOGGER.info(
-                    "a new volume for zone %d has been chosen, value = %d"
-                    % (self.zone, self.changing_volume)
-                )
+            self.zone_info = zone_info
+            if self.changing_volume != desired:
                 return self.changing_volume
-
             return None
 
-        self.changing_volume = int(new_volume * 100)
         self.client.set_volume(self.zone, self.changing_volume, on_increment)
+        self.zone_info = self.client.query_zone(self.zone)
         self.changing_volume = None
-        self.schedule_update_ha_state()
 
     @property
-    def is_volume_muted(self) -> bool:
+    def is_volume_muted(self) -> bool | None:
+        if self.zone_info is None:
+            return None
         return self.zone_info.mute
 
     def mute_volume(self, mute):
