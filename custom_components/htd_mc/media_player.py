@@ -2,7 +2,7 @@
 
 import logging
 
-from homeassistant.components.media_player import MediaPlayerEntity
+from homeassistant.components.media_player import MediaPlayerEntity, MediaPlayerDeviceClass
 from homeassistant.components.media_player.const import MediaPlayerEntityFeature
 from homeassistant.const import STATE_OFF, STATE_ON, STATE_UNKNOWN
 from homeassistant.core import HomeAssistant
@@ -42,6 +42,8 @@ def setup_platform(hass: HomeAssistant, config, add_entities, discovery_info=Non
 
 
 class HtdDevice(MediaPlayerEntity):
+    _attr_device_class = MediaPlayerDeviceClass.SPEAKER
+
     device_instance_id: int = None
     client: HtdMcClient = None
     sources: [str] = None
