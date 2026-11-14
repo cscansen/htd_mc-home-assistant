@@ -38,10 +38,8 @@ So a 2 s fade down can cover only about 13 steps.
 - One lock per amp client, so status polling and fade commands are serialized.
 - Pace the fade up: run at the amp's top speed for large moves and add a delay between steps for small
   ones, so every fade up takes about 4 s.
-- Provide an instant path (no fade) for callers that need volume now. **Known caller:** the PTT intercom plan
-  (`documentation/homeassistant/ptt_intercom_plan.md` §Component 5) sets a baseline with plain
-  `media_player.volume_set` on PTT start and expects it right away. Either that plan calls the instant path, or
-  volume_set stays instant and only turn_on/turn_off fade. Decide before building either one.
+- No instant (no-fade) path is needed. Its only planned caller, the PTT intercom, is parked as of 2026-11-14.
+  Add one only if a future caller needs volume right away.
 
 ## Open (on the review page)
 - Off sequence: either a 2 s audible fade, then mute and a silent walk down to 12%, then power off (recommended),
