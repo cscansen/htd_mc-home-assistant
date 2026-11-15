@@ -3,8 +3,8 @@
   raises it smoothly (about 4.5 s) back to its earlier volume, or to the volume you ask for.
 - Changing the volume while a zone is off no longer breaks that zone's volume control. The new volume is used the
   next time the zone turns on.
-- If a zone comes on loud (for example after a restart during a fade), it is muted and turned down before it fades
-  up.
+- If a zone comes on loud (for example after a restart during a fade), it switches to an empty input, turns down
+  in silence, and switches back before it fades up. Muting can't do this: the amp cancels mute on any volume change.
 - Mute on/off now does what you ask; before, it always flipped.
 - Commands to the amp no longer collide, so there are no more "bad response, will retry" warnings.
 

@@ -31,6 +31,7 @@ SUPPORT_HTD_MC = (
 # walked up from there after power-on, one HTD step (1/60) per command (~0.15 s each).
 PARK_PERCENT = 12          # parked level, all zones (user 2026-11-14)
 LOUD_WAKE_MARGIN = 3       # HTD steps above park that count as "woke loud" -> backstop
+SILENT_SOURCE = 6          # amp input with nothing connected (user 2026-11-15: only 1 and 2 are wired)
 SETTLE_SEC = 1.0           # after power-on, before the fade up starts
 FADE_UP_SEC = 4.5          # paced fade up after power-on; capped by amp speed for big moves
 POWER_WAIT_SEC = 10.0      # how long turn_on waits for the zone to power up
@@ -230,6 +231,30 @@ class HtdDevice(MediaPlayerEntity):
         await self._set_mute(mute)
         self.async_write_ha_state()
 
+    async def _to_silent_source(self) -> int | None:
+        """Switch to SILENT_SOURCE (nothing connected) and return the original source, or None."""
+        info = await self._cmd(self.client.query_zone)
+        if info is None or not info.power or info.source == SILENT_SOURCE:
+            return None
+        orig = info.source
+        for _ in range(3):
+            await self.hass.async_add_executor_job(self.client.set_source, self.zone, SILENT_SOURCE)
+            info = await self._cmd(self.client.query_zone)
+            if info is not None and info.source == SILENT_SOURCE:
+                return orig
+        _LOGGER.warning("Zone %d: silent input not confirmed; parking audibly", self.zone)
+        return orig  # still restore: one of the attempts may have landed late
+
+    async def _restore_source(self, orig: int | None):
+        if orig is None:
+            return
+        for _ in range(3):
+            info = await self._cmd(self.client.query_zone)
+            if info is None or not info.power or info.source == orig:
+                return
+            await self.hass.async_add_executor_job(self.client.set_source, self.zone, orig)
+        _LOGGER.warning("Zone %d: could not restore source %d", self.zone, orig)
+
     async def _set_mute(self, mute: bool) -> bool:
         """Drive the toggle-only mute to `mute`, confirming by query. The client re-sends a command
         after a garbled reply, and a re-sent toggle cancels itself, so check and retry."""
@@ -304,7 +329,7 @@ class HtdDevice(MediaPlayerEntity):
         _LOGGER.warning("Zone %d: fade hit the %d-step limit", self.zone, MAX_LOOP_STEPS)
 
     async def _async_fade(self):
-        muted_by_us = False
+        silent_from = None  # original source while parked on the silent input
         try:
             await self._query()
             for _ in range(8):  # passes: each one is a whole fade down, power change or fade up
@@ -330,17 +355,15 @@ class HtdDevice(MediaPlayerEntity):
                         _LOGGER.warning("Zone %d: power_on not confirmed", self.zone)
                         continue
                     if info.htd_volume > PARK_STEP + LOUD_WAKE_MARGIN:
-                        # Woke loud (HA restart or power loss mid-fade): mute, park, unmute.
+                        # Woke loud (HA restart or power loss mid-fade): park it in silence. Mute
+                        # can't do it (the amp cancels mute on any volume step), so switch to an
+                        # input with nothing connected, step down, then switch back.
                         _LOGGER.info("Zone %d woke loud (step %d); parking before fade-up",
                                      self.zone, info.htd_volume)
-                        if not info.mute:
-                            muted_by_us = await self._set_mute(True)
-                            if not muted_by_us:
-                                _LOGGER.warning("Zone %d: mute not confirmed; parking audibly", self.zone)
+                        silent_from = await self._to_silent_source()
                         await self._move_to(lambda: PARK_STEP)
-                        if muted_by_us:
-                            await self._set_mute(False)
-                        muted_by_us = False
+                        await self._restore_source(silent_from)
+                        silent_from = None
                     self._powered.set()
                     self.async_write_ha_state()
                     await asyncio.sleep(SETTLE_SEC)
@@ -354,10 +377,10 @@ class HtdDevice(MediaPlayerEntity):
         except Exception:  # noqa: BLE001 - a dead fade must never leave the entity wedged
             _LOGGER.exception("Zone %d: fade failed", self.zone)
         finally:
-            if muted_by_us:
+            if silent_from is not None:
                 try:
-                    await self._set_mute(False)
+                    await self._restore_source(silent_from)
                 except Exception:  # noqa: BLE001
-                    _LOGGER.exception("Zone %d: could not unmute after backstop", self.zone)
+                    _LOGGER.exception("Zone %d: could not restore source after backstop", self.zone)
             self._powered.set()
             self.async_write_ha_state()

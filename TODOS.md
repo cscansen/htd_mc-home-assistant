@@ -4,7 +4,9 @@
   on 2026-11-15).
 - [x] Zone volume fade: built in 1.3.0 (`docs/volume_fade_design.md`).
 - [x] `_set_mute` confirm-and-retry loaded at the HA restart on 2026-11-15.
-- [ ] **The loud-wake backstop can't use mute: on the MCA-66, a volume step while muted cancels the mute**
+- [x] (2026-11-15) Loud-wake backstop now parks on empty input 6 (`SILENT_SOURCE`; only inputs 1 and 2 are wired)
+  and then restores the original input. Live-tested on Garage: woke at 55% → input 6 → stepped to 12% → back to input 2.
+- [x] ~~**The loud-wake backstop can't use mute: on the MCA-66, a volume step while muted cancels the mute**~~
   (checked directly 2026-11-15: volume_up while muted unmuted and didn't change the volume). So the step-down is
   audible, though it still parks. Planned fix: during the step-down, switch the zone to an empty input (volume
   steps work there; tested on Source 6), then switch back. Needs the user to say which input has nothing

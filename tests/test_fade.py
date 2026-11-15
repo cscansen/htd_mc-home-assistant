@@ -72,6 +72,7 @@ class FakeAmp:
         self.power, self.step, self.mute = power, step, mute
         self.log = []
         self._flip = False
+        self.source = 2
 
     def _reply(self, zone, before):
         self._flip = not self._flip
@@ -79,7 +80,7 @@ class FakeAmp:
 
     def _d(self, zone):
         d = ZoneDetail(zone)
-        d.power, d.mute, d.htd_volume, d.source = self.power, self.mute, self.step, 1
+        d.power, d.mute, d.htd_volume, d.source = self.power, self.mute, self.step, self.source
         d.volume = round(self.step / 60 * 100)
         d.number, d.mode, d.party, d.treble, d.bass, d.balance = zone, False, False, 0, 0, 0
         return d
@@ -92,6 +93,7 @@ class FakeAmp:
         time.sleep(0.002)
         before = self._d(zone)
         self.step = max(0, min(60, self.step + delta))
+        self.mute = False  # real amp: any volume step cancels mute
         return self._reply(zone, before)
 
     def query_zone(self, zone):
@@ -123,7 +125,9 @@ class FakeAmp:
         return self._reply(zone, before)
 
     def set_source(self, zone, src):
-        return self._d(zone)
+        before = self._d(zone)
+        self.log.append(f"src{src}"); self.source = src
+        return self._reply(zone, before)
 
 
 class FakeHass:
@@ -193,14 +197,17 @@ async def main():
     await e.async_turn_off()
     check("off mid fade-up parks + off", not amp.power and amp.step == PARK, amp.__dict__)
 
-    # 6. Loud wake (e.g. HA restarted mid-fade): mute, park, unmute; no resume -> hold at park.
+    # 6. Loud wake (HA restarted mid-fade): park on the silent input, restore it; hold at park.
     amp = FakeAmp(power=False, step=50); e = make(amp)
+    src_during_walk = []
+    real_down6 = amp.volume_down
+    amp.volume_down = lambda z: (src_during_walk.append(amp.source), real_down6(z))[1]
     await e.async_turn_on()
     await settle(e)
-    check("loud wake parked", amp.power and amp.step == PARK and not amp.mute, amp.__dict__)
-    check("loud wake muted then unmuted", amp.log.count("mute") == 2, amp.log.count("mute"))
-    i_mute = amp.log.index("mute")
-    check("muted before walking down", "down" in amp.log[i_mute:], amp.log[:5])
+    check("loud wake parked", amp.power and amp.step == PARK, amp.__dict__)
+    check("silent input for the whole walk-down", bool(src_during_walk) and set(src_during_walk) == {6},
+          src_during_walk[:4])
+    check("original input restored", amp.source == 2, amp.source)
 
     # 7. On during fade-down -> fade back up to the previous target.
     amp = FakeAmp(power=True, step=36); e = make(amp)
@@ -232,16 +239,12 @@ async def main():
     await e.async_mute_volume(True)
     check("mute(True) twice toggles once", amp.log.count("mute") == 1 and amp.mute)
 
-    # 11. Loud wake where the first mute toggle is swallowed (client retry double-send).
-    amp = FakeAmp(power=False, step=50); amp.swallow_toggles = 1; e = make(amp)
-    muted_during_walk = []
-    real_down = amp.volume_down
-    amp.volume_down = lambda z: (muted_during_walk.append(amp.mute), real_down(z))[1]
+    # 11. Loud wake while already on the silent input: no switch, still parks.
+    amp = FakeAmp(power=False, step=50); amp.source = 6; e = make(amp)
     await e.async_turn_on()
     await settle(e)
-    check("swallowed toggle: still muted for the whole walk-down",
-          muted_during_walk and all(muted_during_walk), muted_during_walk[:3])
-    check("swallowed toggle: unmuted at the end", amp.power and amp.step == PARK and not amp.mute, amp.__dict__)
+    check("already on silent input: parks, no source change",
+          amp.step == PARK and amp.source == 6 and not any(x.startswith("src") for x in amp.log), amp.log[:4])
 
 
 for stale in (False, True):
