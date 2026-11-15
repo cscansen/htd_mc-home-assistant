@@ -1,4 +1,14 @@
-# Zone volume fade — design (2026-11-14, not built)
+# Zone volume fade — design
+
+**Status: built in 1.3.0, deployed 2026-11-15.** Code: `media_player.py` fade engine, plus a per-amp lock in
+`client.py`. Tests: `python3 tests/test_fade.py` runs every scenario twice, once with honest amp replies and
+once with stale ones. Decisions made since this design was written: full audible fade down (~4.5 s), and the
+loud-wake backstop is included.
+
+**What the live testing showed:** the reply to a step, power or mute command often shows the state from
+*before* the command, because the parser takes the first record for the zone. The engine therefore confirms
+with `query_zone` before deciding anything. Mute is toggle-only, and the client re-sends a command after a
+garbled reply, which can cancel a toggle, so `_set_mute` checks the result and retries.
 
 Review page with the open decisions: https://claude.ai/artifact/XtScpUhiwrKu9X6ZWsWgH8
 

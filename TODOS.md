@@ -1,8 +1,9 @@
 # htd_mc — TODOs
 
-- [ ] **Bug: a volume_set to an off zone leaves `_ramping` stuck True** (`media_player.py:110-120`, no try/finally).
-  `client.set_volume` raises `TimeoutError` (the amp ignores volume commands while off). After that, every volume_set
-  on that entity returns at once and does nothing, and `volume_level` reports the requested value. The only way to
-  clear it is an HA restart (YAML platform, no reload). Hit on **Garage 2026-11-14** during fade Phase 0 testing;
-  the Garage HA volume stays broken until HA restarts.
-- [ ] Zone volume fade: design in `docs/volume_fade_design.md`; waiting on the open decisions.
+- [x] Bug: a volume_set to an off zone left `_ramping` stuck True (fixed in 1.3.0; Garage cleared by the HA restart
+  on 2026-11-15).
+- [x] Zone volume fade: built in 1.3.0 (`docs/volume_fade_design.md`).
+- [ ] The `_set_mute` confirm-and-retry fix (from the live backstop test) is on HA but **loads at the next HA
+  restart**. Until then the loud-wake backstop can park a zone without muting it first (audible, still parks).
+- [ ] Listen once on a real zone: whether the 1 s settle after power-on is enough (no clipped start), and whether the
+  fade down and fade up sound smooth.

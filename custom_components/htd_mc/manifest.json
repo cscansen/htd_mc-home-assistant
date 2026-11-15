@@ -4,7 +4,7 @@
   "issue_tracker": "https://www.github.com/hikirsch/htd_mc-home-assistant/issues",
   "codeowners": ["@hikirsch"],
   "name": "HTD MC/MCA-66 Series",
-  "version": "1.2.2",
+  "version": "1.3.0",
   "iot_class": "local_polling",
   "integration_type": "hub",
   "dependencies": [],

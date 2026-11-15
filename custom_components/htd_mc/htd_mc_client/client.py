@@ -1,5 +1,6 @@
 import logging
 import socket
+import threading
 import time
 
 from .constants import HtdConstants
@@ -32,6 +33,7 @@ class HtdMcClient:
         self.command_delay_sec = command_delay / ONE_SECOND
         self.retry_attempts = retry_attempts
         self.socket_timeout = socket_timeout
+        self._lock = threading.Lock()
 
     def query_zone(self, zone: int) -> ZoneDetail | None:
         validate_zone(zone)
@@ -174,12 +176,17 @@ class HtdMcClient:
         cmd = get_command(zone, command, data_code)
 
         address = (self.ip_address, self.port)
-        connection = socket.create_connection(address)
-        connection.settimeout(self.socket_timeout)
-        connection.send(cmd)
-        data = connection.recv(MAX_BYTES_TO_RECEIVE)
-        connection.close()
-        time.sleep(self.command_delay_sec)
+        # One command on the wire at a time per amp: status polling and volume fades run in
+        # different executor threads and otherwise interleave ("Bad response, will retry").
+        with self._lock:
+            connection = socket.create_connection(address, timeout=self.socket_timeout)
+            try:
+                connection.settimeout(self.socket_timeout)
+                connection.send(cmd)
+                data = connection.recv(MAX_BYTES_TO_RECEIVE)
+            finally:
+                connection.close()
+            time.sleep(self.command_delay_sec)
 
         if command is HtdConstants.MODEL_QUERY_COMMAND_CODE:
             return data.decode("utf-8")
